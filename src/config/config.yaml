@@ -85,6 +85,6 @@ sources:
 
 quality:
   on_reject: quarantine      # quarantine | skip | fail
-  max_reject_ratio: 0.05     # sobre este porcentaje el flujo falla aunque haya cuarentena
+  max_reject_ratio: 0.05
 dates:
   input_formats: ["%Y-%m-%d", "%d/%m/%Y"]
