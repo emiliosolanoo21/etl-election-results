@@ -1,11 +1,9 @@
-"""Carga de configuración y credenciales.
-
-Las credenciales se leen de variables de entorno (.env), nunca del YAML.
-"""
+"""Configuración: estructura en YAML, credenciales solo en variables de entorno."""
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -36,14 +34,19 @@ class DBSettings:
         )
 
 
-def load_config(path: Path | None = None) -> dict:
+@lru_cache(maxsize=None)
+def load_config(path: str | None = None) -> dict:
     with open(path or CONFIG_PATH, "r", encoding="utf-8") as fh:
         return yaml.safe_load(fh)
 
 
 def source_config(name: str) -> dict:
-    cfg = load_config()
     try:
-        return cfg["sources"][name]
+        return load_config()["sources"][name]
     except KeyError as exc:
         raise KeyError(f"Fuente '{name}' no está definida en config.yaml") from exc
+
+
+def resolve_path(relative: str) -> Path:
+    """Resuelve rutas del YAML respecto a la raíz del proyecto."""
+    return PROJECT_ROOT / relative

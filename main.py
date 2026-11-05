@@ -30,7 +30,7 @@ def cmd_load_historico(args: argparse.Namespace) -> None:
 def cmd_load_empadronados(args: argparse.Namespace) -> None:
     from src.pipelines.empadronados_pipeline import build_empadronados_pipeline
 
-    build_empadronados_pipeline(args.fecha).run()
+    build_empadronados_pipeline(args.fecha, force=args.force).run()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -42,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p2 = sub.add_parser("load-empadronados", help="Carga incremental del padrón")
     p2.add_argument("--fecha", required=True, help="Fecha de proceso YYYY-MM-DD")
+    p2.add_argument("--force", action="store_true", help="Permite reprocesar una fecha anterior al watermark")
     p2.set_defaults(func=cmd_load_empadronados)
 
     return parser

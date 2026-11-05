@@ -1,8 +1,4 @@
-"""Configuración central de logging.
-
-TODO (candidato): decide si necesitas logging estructurado y qué métricas de
-ejecución quieres emitir (filas leídas / cargadas / rechazadas).
-"""
+"""Logging central con formato uniforme para todos los módulos."""
 from __future__ import annotations
 
 import logging
@@ -18,4 +14,5 @@ def get_logger(name: str) -> logging.Logger:
         )
         logger.addHandler(handler)
         logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
+        logger.propagate = False
     return logger
