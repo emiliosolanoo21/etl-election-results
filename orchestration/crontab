@@ -1,0 +1,2 @@
+# Padrón diario a las 02:00 hora de Guatemala; procesa todo lo pendiente desde el watermark.
+0 2 * * * cd /app && python orchestration/runner.py diario
