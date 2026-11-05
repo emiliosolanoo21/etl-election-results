@@ -1,4 +1,3 @@
-# Opcional (deseable). Levanta PostgreSQL y ejecuta el DDL al iniciar.
 services:
   postgres:
     image: postgres:16
@@ -14,19 +13,51 @@ services:
       - ./sql/01_ddl_electoral.sql:/docker-entrypoint-initdb.d/01_ddl_electoral.sql:ro
       - ./sql/02_control_etl.sql:/docker-entrypoint-initdb.d/02_control_etl.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-etl_user}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-etl_user} -d ${POSTGRES_DB:-electoral_db}"]
       interval: 5s
       retries: 10
 
-  # TODO (opcional): servicio del ETL y/o del orquestador
-  # etl:
-  #   build: .
-  #   env_file: .env
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #   volumes:
-  #     - ./data:/app/data
+  etl:
+    build: .
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data:ro
+    profiles: ["manual"]
+
+  etl-orchestrator:
+    build: .
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    entrypoint: []
+    command: ["python", "orchestration/runner.py", "todo"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data:ro
+
+  scheduler:
+    build: .
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    entrypoint: []
+    command: ["/usr/local/bin/supercronic", "/app/orchestration/crontab"]
+    depends_on:
+      etl-orchestrator:
+        condition: service_completed_successfully
+    volumes:
+      - ./data:/app/data:ro
+    restart: unless-stopped
 
 volumes:
   pgdata:
