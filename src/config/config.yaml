@@ -1,33 +1,90 @@
-# ---------------------------------------------------------------------------
-# Configuración de las fuentes y los flujos.
-# La idea del template es que agregar una fuente nueva sea agregar un bloque
-# aquí, no reescribir código. Puedes extender esta estructura.
-# ---------------------------------------------------------------------------
+# Cada fuente declara extractor, transformaciones, reglas y destino; el código solo las ensambla.
 paths:
   historico: data/historico
   empadronados: data/empadronados
 
+mappings:
+  area: {u: urbana, urbana: urbana, r: rural, rural: rural}
+  zona: {sin zona: null}
+  sexo: {m: M, masculino: M, f: F, femenino: F}
+  estado_registro: {activo: activo, suspendido: suspendido, fallecido: fallecido}
+  partido: {une: UNE, u.n.e.: UNE, vamos: VAMOS, semilla: SEMILLA, cabal: CABAL, valor: VALOR, viva: VIVA}
+  tipo_eleccion: {presidencial: presidencial, legislativa: legislativa, municipal: municipal}
+  rango_edad: {"18 a 25": 18-25, "18-25": 18-25, "26 a 35": 26-35, "26-35": 26-35, "36-45": 36-45, "46-60": 46-60, "mayor de 60": 61+, "61+": 61+}
+
 sources:
   centros_votacion:
-    type: csv
-    path: data/historico/centros_votacion.csv
-    load_mode: full          # carga única
-    target_table: electoral.centros_votacion
-    natural_key: [codigo_centro_votacion]
+    extractor: {type: csv, path: data/historico/centros_votacion.csv}
+    transforms:
+      - {type: trim}
+      - {type: normalize_text, fields: [nombre_centro, direccion, nombre_departamento, nombre_municipio]}
+      - {type: canonical_by_key, field: nombre_departamento, key: codigo_departamento}
+      - {type: canonical_by_key, field: nombre_municipio, key: codigo_municipio}
+      - {type: cast_numeric, fields: {latitud: float, longitud: float, cantidad_mesas: int, capacidad_maxima: int, anio_vigencia: int}}
+      - {type: categories, fields: [area, zona]}
+      - {type: deduplicate, key: [codigo_centro_votacion], keep: last}
+    rules:
+      - {rule: not_null, fields: [codigo_centro_votacion, codigo_departamento, codigo_municipio]}
+      - {rule: no_parse_errors}
+      - {rule: geo_hierarchy}
+      - {rule: not_in, field: codigo_departamento, values: ["99"]}
+      - {rule: non_negative, fields: [cantidad_mesas, capacidad_maxima]}
+    loader:
+      type: full
+      table: electoral.centros_votacion
+      natural_key: [codigo_centro_votacion]
+      columns: [codigo_centro_votacion, nombre_centro, direccion, codigo_departamento, nombre_departamento, codigo_municipio, nombre_municipio, zona, area, latitud, longitud, cantidad_mesas, capacidad_maxima, anio_vigencia]
 
   resultados_historicos:
-    type: csv
-    path: data/historico/resultados_historicos.csv
-    load_mode: full          # carga única
-    target_table: electoral.resultados_elecciones
-    natural_key: [anio_eleccion, tipo_eleccion, vuelta, codigo_mesa, partido]
+    depends_on: [centros_votacion]
+    extractor: {type: csv, path: data/historico/resultados_historicos.csv}
+    transforms:
+      - {type: trim}
+      - {type: cast_numeric, fields: {anio_eleccion: int, vuelta: int, votos_validos: int, votos_nulos: int, votos_en_blanco: int, total_empadronados_mesa: int, total_votantes_mesa: int}}
+      - {type: categories, fields: [tipo_eleccion, partido]}
+      - {type: deduplicate, key: [anio_eleccion, tipo_eleccion, vuelta, codigo_mesa, partido], keep: last}
+      - {type: enrich_from_catalog, table: electoral.centros_votacion, key: codigo_centro_votacion, fields: [nombre_departamento, nombre_municipio]}
+    rules:
+      - {rule: not_null, fields: [anio_eleccion, tipo_eleccion, codigo_mesa, partido, votos_validos]}
+      - {rule: no_parse_errors}
+      - {rule: in_domain, field: tipo_eleccion, values: [presidencial, legislativa, municipal]}
+      - {rule: non_negative, fields: [votos_validos, votos_nulos, votos_en_blanco, total_empadronados_mesa, total_votantes_mesa]}
+      - {rule: lte, field: total_votantes_mesa, max_field: total_empadronados_mesa}
+      - {rule: in_catalog, field: codigo_centro_votacion, table: electoral.centros_votacion}
+      - {rule: mesa_matches_centro}
+    loader:
+      type: full
+      table: electoral.resultados_elecciones
+      natural_key: [anio_eleccion, tipo_eleccion, vuelta, codigo_mesa, partido]
+      columns: [anio_eleccion, tipo_eleccion, vuelta, codigo_departamento, nombre_departamento, codigo_municipio, nombre_municipio, codigo_centro_votacion, codigo_mesa, partido, candidato, votos_validos, votos_nulos, votos_en_blanco, total_empadronados_mesa, total_votantes_mesa]
+      derive_mesas: true
 
   empadronados:
-    type: csv
-    path_pattern: data/empadronados/empadronados_{fecha}.csv
-    load_mode: incremental   # actualización diaria
-    target_table: electoral.empadronados
-    natural_key: [id_empadronado]
+    depends_on: [centros_votacion]
+    extractor: {type: csv, path_pattern: "data/empadronados/empadronados_{fecha}.csv"}
+    transforms:
+      - {type: trim}
+      - {type: categories, fields: [sexo, estado_registro, rango_edad]}
+      - {type: parse_dates, fields: [fecha_inscripcion, fecha_ultima_actualizacion]}
+      - {type: repair_centro_from_mesa}
+      - {type: deduplicate, key: [id_empadronado], keep: last}
+    rules:
+      - {rule: not_null, fields: [id_empadronado, codigo_centro_votacion, codigo_mesa, estado_registro]}
+      - {rule: no_parse_errors}
+      - {rule: in_domain, field: estado_registro, values: [activo, suspendido, fallecido]}
+      - {rule: date_range, field: fecha_inscripcion, min: "1900-01-01"}
+      - {rule: in_catalog, field: codigo_centro_votacion, table: electoral.centros_votacion}
+      - {rule: mesa_matches_centro}
+    loader:
+      type: incremental
+      table: electoral.empadronados
+      natural_key: [id_empadronado]
+      columns: [id_empadronado, codigo_centro_votacion, codigo_mesa, rango_edad, sexo, codigo_departamento_residencia, codigo_municipio_residencia, estado_registro, fecha_inscripcion, fecha_ultima_actualizacion]
+      absent_state: baja_por_ausencia
+      derive_mesas: true
 
 quality:
-  on_reject: quarantine      # quarantine | fail | skip  (decisión del candidato)
+  on_reject: quarantine      # quarantine | skip | fail
+  max_reject_ratio: 0.05     # sobre este porcentaje el flujo falla aunque haya cuarentena
+dates:
+  input_formats: ["%Y-%m-%d", "%d/%m/%Y"]

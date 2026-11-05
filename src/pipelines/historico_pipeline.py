@@ -1,20 +1,13 @@
-"""Flujo de carga única: centros de votación y resultados históricos.
-[TEMPLATE — completar]
-"""
+"""Carga única: centros de votación y resultados históricos (con mesas derivadas)."""
 from __future__ import annotations
 
 from src.pipelines.base_pipeline import Pipeline
+from src.pipelines.factory import build_pipeline
 
 
 def build_centros_pipeline() -> Pipeline:
-    """TODO: armar extractor + transformers + validaciones + FullLoader."""
-    raise NotImplementedError("TODO: implementar")
+    return build_pipeline("centros_votacion")
 
 
 def build_resultados_pipeline() -> Pipeline:
-    """TODO: armar extractor + transformers + validaciones + FullLoader.
-
-    Considerar que las mesas deben quedar registradas en
-    electoral.mesas_votacion (no viene un archivo de mesas: hay que derivarlas).
-    """
-    raise NotImplementedError("TODO: implementar")
+    return build_pipeline("resultados_historicos")
